@@ -5,6 +5,8 @@ import (
 	"github.com/Rics69/do-everything/internal/pkg/repository"
 )
 
+//go:generate mockgen -source=service.go -destination=mocks/mock.go
+
 type Authorization interface {
 	CreateUser(user domain.User) (int, error)
 	GenerateToken(username, password string) (string, error)

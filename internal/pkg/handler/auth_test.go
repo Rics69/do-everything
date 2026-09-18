@@ -1,0 +1,90 @@
+package handler
+
+import (
+	"bytes"
+	"errors"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/Rics69/do-everything/internal/core/domain"
+	"github.com/Rics69/do-everything/internal/pkg/service"
+	mock_service "github.com/Rics69/do-everything/internal/pkg/service/mocks"
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/assert/v2"
+	"go.uber.org/mock/gomock"
+)
+
+func TestHandler_signUp(t *testing.T) {
+	type mockBehavior func(s *mock_service.MockAuthorization, user domain.User)
+
+	tests := []struct {
+		name                 string
+		inputBody            string
+		inputUser            domain.User
+		mockBehavior         mockBehavior
+		expectedStatusCode   int
+		expectedResponseBody string
+	}{
+		{
+			name:      "Ok",
+			inputBody: `{"username": "username", "name": "Test Name", "password": "qwerty"}`,
+			inputUser: domain.User{
+				Username: "username",
+				Name:     "Test Name",
+				Password: "qwerty",
+			},
+			mockBehavior: func(r *mock_service.MockAuthorization, user domain.User) {
+				r.EXPECT().CreateUser(user).Return(1, nil)
+			},
+			expectedStatusCode:   200,
+			expectedResponseBody: `{"id":1}`,
+		},
+		{
+			name:                 "Wrong Input",
+			inputBody:            `{"username": "username"}`,
+			inputUser:            domain.User{},
+			mockBehavior:         func(r *mock_service.MockAuthorization, user domain.User) {},
+			expectedStatusCode:   400,
+			expectedResponseBody: `{"message":"invalid input body"}`,
+		},
+		{
+			name:      "Service Error",
+			inputBody: `{"username": "username", "name": "Test Name", "password": "qwerty"}`,
+			inputUser: domain.User{
+				Username: "username",
+				Name:     "Test Name",
+				Password: "qwerty",
+			},
+			mockBehavior: func(r *mock_service.MockAuthorization, user domain.User) {
+				r.EXPECT().CreateUser(user).Return(0, errors.New("something went wrong"))
+			},
+			expectedStatusCode:   500,
+			expectedResponseBody: `{"message":"something went wrong"}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := gomock.NewController(t)
+			defer c.Finish()
+
+			repo := mock_service.NewMockAuthorization(c)
+			test.mockBehavior(repo, test.inputUser)
+
+			services := &service.Service{Authorization: repo}
+			handler := Handler{services}
+
+			r := gin.New()
+			r.POST("/sign-up", handler.signUp)
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest("POST", "/sign-up",
+				bytes.NewBufferString(test.inputBody))
+
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, w.Code, test.expectedStatusCode)
+			assert.Equal(t, w.Body.String(), test.expectedResponseBody)
+		})
+	}
+}
